@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'TrackTWLite-v1-beta9-fix31.7.18-source.zip'
+      - '.github/workflows/build-and-release.yml'
   workflow_dispatch:
 
 permissions:
@@ -27,6 +28,21 @@ jobs:
           test -f TrackTWLite-v1-beta9-fix31.7.18-source.zip
           unzip -q TrackTWLite-v1-beta9-fix31.7.18-source.zip -d extracted
           test -f extracted/TrackTWLite-v1-beta9-fix31.7.18/settings.gradle.kts
+
+      - name: Correct Kotlin collection operation and package fixed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("extracted/TrackTWLite-v1-beta9-fix31.7.18/app/src/main/java/tw/tracklite/data/SettingsStore.kt")
+          contents = path.read_text(encoding="utf-8")
+          before = "prefs[PENDING_DEVICE_EVENTS] = values.takeLast(300).toSet()"
+          after = "prefs[PENDING_DEVICE_EVENTS] = values.toList().takeLast(300).toSet()"
+          assert contents.count(before) == 1, "Expected source statement was not found exactly once"
+          path.write_text(contents.replace(before, after), encoding="utf-8")
+          PY
+          (cd extracted && zip -qr "$GITHUB_WORKSPACE/TrackTWLite-v1-beta9-fix31.7.18-fixed-source.zip" TrackTWLite-v1-beta9-fix31.7.18)
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -59,7 +75,7 @@ jobs:
           set -euo pipefail
           cp extracted/TrackTWLite-v1-beta9-fix31.7.18/app/build/outputs/apk/debug/app-debug.apk TrackTWLite-v1-beta9-fix31.7.18-debug.apk
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" TrackTWLite-v1-beta9-fix31.7.18-debug.apk TrackTWLite-v1-beta9-fix31.7.18-source.zip --clobber
+            gh release upload "$TAG" TrackTWLite-v1-beta9-fix31.7.18-debug.apk TrackTWLite-v1-beta9-fix31.7.18-fixed-source.zip --clobber
           else
-            gh release create "$TAG" TrackTWLite-v1-beta9-fix31.7.18-debug.apk TrackTWLite-v1-beta9-fix31.7.18-source.zip --target "$GITHUB_SHA" --prerelease --title "TrackTWLite fix31.7.18 (debug APK)" --notes "Android debug APK built from the attached source archive using GitHub Actions. Debug signing may differ from existing installations: back up app data before replacing an installed APK."
+            gh release create "$TAG" TrackTWLite-v1-beta9-fix31.7.18-debug.apk TrackTWLite-v1-beta9-fix31.7.18-fixed-source.zip --target "$GITHUB_SHA" --prerelease --title "TrackTWLite fix31.7.18 (debug APK)" --notes "Android debug APK built from the attached source archive using GitHub Actions. Debug signing may differ from existing installations: back up app data before replacing an installed APK."
           fi
